@@ -130,7 +130,7 @@ module nightplumeaki_top (
     );
 
     // === Output wiring ===
-    assign addr_out   = mem_active ? B : pc;        // address mux
+    assign addr_out   = (mem_active & mem_cycle) ? B : pc;        // address mux
     assign store_data = A;                           // Rd value for STR
     assign mem_wr_en  = MemWrite & IR_valid;         // write enable
 
