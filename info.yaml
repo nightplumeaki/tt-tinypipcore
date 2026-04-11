@@ -44,7 +44,7 @@ pinout:
   uo[4]: "ADDR4"
   uo[5]: "ADDR5"
   uo[6]: "ADDR6"
-  uo[7]: "ADDR7"
+  uo[7]: "WE_N"
 
   # Bidirectional pins
   uio[0]: "STORE_DATA0"

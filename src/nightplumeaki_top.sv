@@ -7,9 +7,9 @@ module nightplumeaki_top (
     input  logic       clk,
     input  logic       rst_n,
     input  logic [7:0] data_in,      // ui_in
-    output logic [7:0] addr_out,     // uo_out
-    output logic [7:0] store_data,   // uio_out
-    output logic       mem_wr_en     // for uio_oe
+    output logic [6:0] addr_out,     // uo_out[6:0]: 7-bit address bus (128 locations)
+    output logic [7:0] store_data,   // uio_out: store data for STR
+    output logic       mem_wr_en     // uo_out[7] via ~: active-high WE, inverted by project.sv
 );
 
     // === Internal wires ===
@@ -26,7 +26,15 @@ module nightplumeaki_top (
 
     // === Derived signals ===
     wire mem_active = (MemRead | MemWrite) & IR_valid;
-    wire stall     = mem_active & ~mem_cycle;
+    // mem_done pulses the cycle after mem_cycle, when addr_out has returned
+    // to PC and the ROM is serving the correct next instruction again.
+    // Stall must hold through the entire mem_cycle (addr_out=B) so the IR
+    // does not latch garbage from the data address. It releases only when
+    // addr_out is back on PC and the ROM output is valid.
+    logic mem_done;
+    always_ff @(posedge clk)
+        mem_done <= mem_cycle;
+    wire stall     = mem_active & ~mem_done;
     wire flush     = BrTaken & IR_valid;
 
     // Rd address mux: I-type uses instr[5:4], R-type uses instr[3:2]
@@ -76,7 +84,12 @@ module nightplumeaki_top (
         if (!rst_n)
             mem_cycle <= 1'b0;
         else
-            mem_cycle <= mem_active & ~mem_cycle;
+            // Gate on ~mem_done to prevent a spurious re-toggle at stall release.
+        // At that edge IR still holds the old memory instruction (mem_active=1)
+        // and mem_cycle=0, so without this gate mem_cycle would toggle to 1
+        // again, causing mem_done=1 to appear one cycle later and silently
+        // suppress the stall of any immediately following LDR/STR.
+        mem_cycle <= mem_active & ~mem_cycle & ~mem_done;
     end
 
     // === Flag register ===
@@ -112,7 +125,12 @@ module nightplumeaki_top (
         .As      (instr[1:0]),
         .Aw      (rd_addr),
         .Dw      (wb_data),
-        .RegWrite(RegWrite & IR_valid),
+        // For LDR, only write when mem_cycle=1: that is the cycle where
+        // addr_out=B (data address) and the ROM/memory has had a full cycle
+        // to respond with valid data on data_in. Without this gate, the
+        // regfile would write on every stall cycle and also on stall release,
+        // corrupting Rd with instruction opcodes instead of the loaded value.
+        .RegWrite(RegWrite & IR_valid & (~MemRead | mem_cycle)),
         .Dd      (A),
         .Ds      (B)
     );
@@ -130,8 +148,13 @@ module nightplumeaki_top (
     );
 
     // === Output wiring ===
-    assign addr_out   = (mem_active & mem_cycle) ? B : pc;        // address mux
-    assign store_data = A;                           // Rd value for STR
-    assign mem_wr_en  = MemWrite & IR_valid;         // write enable
+    // addr_out is 7 bits (128 locations). PC and data registers are kept 8-bit
+    // internally; only the lower 7 bits reach the address bus.
+    assign addr_out   = (mem_active & mem_cycle) ? B[6:0] : pc[6:0];
+    assign store_data = A;
+    // Gate WE on mem_cycle: addr_out switches to B only when mem_cycle=1.
+    // Without this gate, WE would assert one cycle early while addr_out still
+    // points at PC, causing a spurious write into instruction memory.
+    assign mem_wr_en  = MemWrite & IR_valid & mem_cycle;
 
 endmodule // nightplumeaki_top
