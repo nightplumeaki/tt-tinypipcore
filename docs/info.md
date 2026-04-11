@@ -143,5 +143,3 @@ A byte-addressable 8-bit SRAM with combinational read and one write enable signa
 - Output the data at the addressed location combinationally (output valid within one clock half-period after address is presented on the falling edge)
 - Accept a write when `uo_out[7]` (WE#) is driven low (active-low, connect directly to SRAM WE#)
 - Support at least 128 addressable bytes
-
-Example compatible parts: IS61C256AH (32K×8, 3.3 V, 10 ns access time), AS6C62256 (32K×8, 5 V tolerant).
